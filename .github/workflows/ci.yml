@@ -1,0 +1,48 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.10.12"
+      - run: uv sync --locked
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      # The integration suite needs the amneziawg kernel module and skips itself here
+      - run: uv run pytest
+
+  # A tag v<version> of the version in pyproject.toml publishes the wheel and the pinned
+  # requirements, which a deployment installs with pip --require-hashes
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: test
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.10.12"
+      - name: Check the tag against the version
+        run: |
+          version="$(uv version --short)"
+          test "v$version" = "$GITHUB_REF_NAME" || { echo "tag $GITHUB_REF_NAME, pyproject $version"; exit 1; }
+      - run: uv build --wheel
+      - run: uv export --locked --no-dev --no-emit-project --format requirements-txt --output-file dist/requirements.txt
+      - run: cd dist && sha256sum * > SHA256SUMS
+      - run: gh release create "$GITHUB_REF_NAME" dist/* --title "$GITHUB_REF_NAME" --generate-notes
+        env:
+          GH_TOKEN: ${{ github.token }}

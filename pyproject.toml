@@ -1,0 +1,56 @@
+[project]
+name = "awg31-telegram-bot"
+version = "0.1.0"
+description = "Telegram bot that adds AmneziaWG 3.x clients to a kernel-module server on the fly"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.12"
+dependencies = [
+    "aiogram>=3.31,<4",
+    "segno>=1.6,<2",
+]
+
+[project.scripts]
+awg31-bot = "awg31_bot.__main__:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=1",
+    "pytest-cov>=6",
+    "ruff>=0.13",
+    # A QR decoder of its own, so a test reads the images the bot sends as a phone camera would
+    "zxing-cpp>=2.3",
+    "pillow>=11",
+]
+
+[build-system]
+requires = ["uv_build>=0.10,<0.11"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "awg31_bot"
+
+# The public index, whatever a developer's own uv.toml names: the lock file records the index of
+# every package, and CI and a node install from what it says
+[[tool.uv.index]]
+name = "pypi"
+url = "https://pypi.org/simple"
+default = true
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+markers = ["integration: needs root, the amneziawg kernel module and awg; run on a node"]
+addopts = "--cov=awg31_bot --cov-report=term-missing --cov-fail-under=85"
+
+[tool.coverage.run]
+branch = true

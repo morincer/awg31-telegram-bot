@@ -1,0 +1,25 @@
+# Settings of awg31-telegram-bot. Keep the file readable by the bot's account only: it holds the token.
+
+# From @BotFather
+token = "123456:replace-me"
+# Telegram user ids the bot answers. Everybody else gets no answer at all.
+admin_ids = [123456789]
+
+# The AmneziaWG interface, and the peers file its PostUp loads with `awg addconf`
+interface = "awg0"
+peers_file = "/var/lib/awg31-bot/awg0.peers.conf"
+
+# What clients are told
+endpoint = "vpn.example.org"
+dns = ["9.9.9.9"]
+mtu = 1280
+
+# The tunnel network and the server's address in it
+network = "10.66.66.0/24"
+server_ip = "10.66.66.1"
+
+# Shown in AmneziaVPN as "<name> - <client>"
+name = "example"
+
+# The awg binary of amneziawg-tools
+awg = "/usr/bin/awg"
