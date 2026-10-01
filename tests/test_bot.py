@@ -1,16 +1,18 @@
 """What an admin and a stranger get from the bot, seen from Telegram and from the server."""
 
 import json
+import logging
 import os
 
 import pytest
+from aiogram.methods import SendAnimation, SendMessage
 
 from awg31_bot import peers
 from awg31_bot.service import Service
 
 from . import app_reader
 from .conftest import fake_public, parse_conf
-from .telegram import dispatcher, documents, images, scan, send, texts
+from .telegram import code_blocks, dispatcher, documents, everything_shown, images, scan, send, texts
 
 
 @pytest.fixture
@@ -26,15 +28,15 @@ def issued_config(bot):
     """The three forms of one issued config, each read the way its reader would read it."""
     files = documents(bot)
     conf_name, conf_bytes = next((n, b) for n, b in files.items() if n.endswith(".conf"))
-    # The link comes as a message, or as a file when it outgrows one
-    links = [t for t in texts(bot) if t.startswith("vpn://")]
+    # The link comes as a code block, or as a file when it outgrows a message
+    links = [b for b in code_blocks(bot) if b.startswith("vpn://")]
     links += [b.decode() for n, b in files.items() if n.endswith(".vpn.txt")]
     assert len(links) == 1, "one vpn:// link in the chat"
     return (
         conf_name,
         parse_conf(conf_bytes.decode()),
         app_reader.read_link(links[0]),
-        app_reader.read_qr_series([scan(png) for png in images(bot)]),
+        app_reader.read_qr_series([code for picture in images(bot) for code in scan(picture)]),
     )
 
 
@@ -73,10 +75,56 @@ async def test_add_issues_a_config_that_matches_the_server_in_all_three_forms(dp
     assert last["I1"] == iface.set["I1"]
 
 
+async def test_the_app_names_the_connection_after_the_server_alone(dp, config):
+    # A phone shows a dozen characters of the name; the device's name is in the chat already
+    _, _, link, _ = issued_config(await send(dp, "/add phone"))
+    assert link["description"] == config.name
+
+
+async def test_the_status_and_the_link_come_first_and_the_rest_answers_them(dp):
+    bot = await send(dp, "/add phone")
+    first = bot.calls[0]
+    assert isinstance(first, SendMessage)
+    assert "phone" in texts(bot)[0] and "new device" in texts(bot)[0] and "10.66.66.2" in texts(bot)[0]
+    assert code_blocks(bot)[0].startswith("vpn://")
+    rest = bot.calls[1:]
+    assert rest, "the file and the QR series follow"
+    assert all(c.reply_parameters.message_id == bot.message_id(first) for c in rest)
+
+
+@pytest.mark.parametrize(
+    ("command", "tag"),
+    [("/add phone", "#phone"), ("/add my-phone.2", "#my_phone_2"), ("/add 2024", "#awg_2024")],
+)
+async def test_every_message_of_a_device_carries_tags_a_chat_search_finds(dp, command, tag):
+    # A hashtag ends at '-' and '.', and digits alone make none
+    for shown in everything_shown(await send(dp, command)):
+        assert "#awg" in shown.split()
+        assert tag in shown.split()
+
+
+async def test_reissue_and_del_are_tagged_like_the_device(dp):
+    await send(dp, "/add phone")
+    for command in ("/reissue phone", "/del phone"):
+        for shown in everything_shown(await send(dp, command)):
+            assert "#phone" in shown.split()
+
+
+async def test_a_qr_series_comes_as_one_animation_the_app_reads(dp):
+    bot = await send(dp, "/add phone")
+    animations = [c for c in bot.calls if isinstance(c, SendAnimation)]
+    assert len(animations) == 1
+    frames = scan(animations[0].animation.data)
+    assert len(frames) > 1
+    _, _, link, _ = issued_config(bot)
+    assert app_reader.read_qr_series(frames) == link
+
+
 async def test_a_link_that_outgrows_a_message_still_reaches_the_app_as_a_file(dp, iface):
     iface.set.update({f"I{n}": "<b 0x" + os.urandom(556).hex() + ">" for n in (4, 5)})
     bot = await send(dp, "/add phone")
-    assert not any(t.startswith("vpn://") for t in texts(bot))
+    assert code_blocks(bot) == []
+    assert all(len(t) <= 4096 for t in texts(bot))
     _, conf, link, qr = issued_config(bot)
     assert link == qr
     assert json.loads(link["containers"][0]["awg"]["last_config"])["I5"] == iface.set["I5"]
@@ -113,8 +161,7 @@ async def test_reissue_lets_the_new_config_in_and_shuts_the_old_one_out(dp, conf
     assert new_conf["Interface"]["Address"] == old_conf["Interface"]["Address"]
     assert on_file(config)["phone"].public_key == new_key
     # The owner is told the old config is gone
-    captions = [c.caption for c in second.calls if getattr(c, "caption", None)]
-    assert any("old config no longer works" in c for c in captions)
+    assert "old config no longer works" in texts(second)[0]
 
 
 async def test_del_shuts_the_device_out_and_frees_its_address(dp, config, iface):
@@ -136,6 +183,23 @@ async def test_list_names_every_device_with_its_address(dp):
     listed = texts(await send(dp, "/list"))[0]
     assert "phone — 10.66.66.2" in listed
     assert "laptop — 10.66.66.3" in listed
+
+
+async def test_the_journal_says_what_each_command_did_and_holds_no_key(dp, iface, caplog):
+    caplog.set_level(logging.INFO, logger="awg31_bot")
+    added = await send(dp, "/add phone")
+    await send(dp, "/reissue phone")
+    await send(dp, "/del phone")
+    await send(dp, "/del phone")
+    journal = "\n".join(r.getMessage() for r in caplog.records)
+
+    for line in ("added phone at 10.66.66.2", "reissued phone at 10.66.66.2", "deleted phone"):
+        assert line in journal
+    # The second /del is refused, and the journal says so
+    assert "refused '/del phone'" in journal
+    _, conf, _, _ = issued_config(added)
+    for secret in (conf["Interface"]["PrivateKey"], conf["Peer"]["PresharedKey"], iface.private_key):
+        assert secret not in journal
 
 
 @pytest.mark.parametrize(

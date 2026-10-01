@@ -9,7 +9,8 @@ correction L each (qrCodeUtils::generateQrCodeImageSeries). The app scans the ch
 and joins them (ImportController::parseQrCodeChunk).
 
 Why a series: a config with three I packets of 556 bytes is about 4 KB, and one QR code holds
-2953 bytes at most.
+2953 bytes at most. The series goes out as one looping animation, a code a second: held up to a
+camera, it hands the app every chunk in turn without anybody swiping.
 
 The JSON follows the one mycelium-mesh/amneziawg-ui builds (Apache-2.0,
 internal/amnezialink/link.go) for AmneziaWG 3.1. last_config carries no "config", the native config
@@ -26,6 +27,7 @@ import struct
 import zlib
 
 import segno
+from PIL import Image
 
 from .clientconf import Client, Server
 
@@ -117,4 +119,22 @@ def qr_chunks(config: dict) -> list[str]:
 def qr_png(text: str, scale: int = 6) -> bytes:
     buf = io.BytesIO()
     segno.make(text, error="l", micro=False, boost_error=False).save(buf, kind="png", scale=scale, border=4)
+    return buf.getvalue()
+
+
+def qr_gif(chunks: list[str], scale: int = 6, frame_ms: int = 1000) -> bytes:
+    """The QR series as one looping GIF, a frame per code.
+
+    The last chunk is shorter and its code smaller; every frame is centred on a canvas of the largest
+    one, so the picture does not jump between frames.
+    """
+    frames = [Image.open(io.BytesIO(qr_png(chunk, scale))).convert("L") for chunk in chunks]
+    side = max(max(f.size) for f in frames)
+    canvas = []
+    for frame in frames:
+        page = Image.new("L", (side, side), 255)
+        page.paste(frame, ((side - frame.width) // 2, (side - frame.height) // 2))
+        canvas.append(page)
+    buf = io.BytesIO()
+    canvas[0].save(buf, format="GIF", save_all=True, append_images=canvas[1:], duration=frame_ms, loop=0)
     return buf.getvalue()

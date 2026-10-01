@@ -4,15 +4,21 @@ Every change goes to the running interface first and to the peers file second. I
 be written, the interface change is rolled back, so the two never disagree for longer than one
 command. The private key of a client lives only in the Issued it returns: nothing stores it, and a
 lost config is reissued with new keys.
+
+Every change that took effect is logged with the device's name and address, and no key: the journal
+says who was let in or shut out, and when.
 """
 
 import asyncio
+import logging
 import time
 from dataclasses import dataclass
 
 from . import amnezia, clientconf, ipam, peers
 from .awg import Awg, PeerState
 from .config import Config
+
+log = logging.getLogger(__name__)
 
 
 class ClientError(Exception):
@@ -68,7 +74,8 @@ class Service:
             mtu=c.mtu,
             server_ip=str(c.server_ip),
             prefix=c.network.prefixlen,
-            description=f"{c.name} - {name}",
+            # The name AmneziaVPN gives the connection; a phone shows a dozen characters of it
+            description=c.name,
         )
         issued = Issued(name, str(address), conf, amnezia.vpn_link(payload), amnezia.qr_chunks(payload))
         return peers.Peer(name, keys.public, address, psk), issued
@@ -96,6 +103,7 @@ class Service:
                 peer, issued = await self._issue(name, address)
                 await self.awg.add_peer(peer.public_key, peer.preshared_key, str(address))
                 await self._commit(current + [peer], lambda: self.awg.remove_peer(peer.public_key))
+                log.info("added %s at %s", name, address)
                 return issued
 
     async def reissue(self, name: str) -> Issued:
@@ -120,6 +128,7 @@ class Service:
                     await self._restore(old)
 
                 await self._commit([peer if p is old else p for p in current], undo)
+                log.info("reissued %s at %s; the old key is out", name, old.address)
                 return issued
 
     async def _restore(self, old: peers.Peer) -> None:
@@ -135,6 +144,7 @@ class Service:
                     raise ClientError(f"There is no {name}")
                 await self.awg.remove_peer(old.public_key)
                 await self._commit([p for p in current if p is not old], lambda: self._restore(old))
+                log.info("deleted %s; %s is free", name, old.address)
                 return str(old.address)
 
     async def list(self) -> list[ClientInfo]:
@@ -170,12 +180,13 @@ def _duration(seconds: int) -> str:
     return f"{seconds // 86400} d"
 
 
+# Binary units, named as such: the numbers then match what awg show prints
 def _bytes(n: int) -> str:
     if n < 1024:
         return f"{n} B"
     value = n / 1024
-    for unit in ("KB", "MB"):
+    for unit in ("KiB", "MiB"):
         if value < 1024:
             return f"{value:.1f} {unit}"
         value /= 1024
-    return f"{value:.1f} GB"
+    return f"{value:.1f} GiB"

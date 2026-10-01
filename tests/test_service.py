@@ -159,7 +159,7 @@ async def test_list_tells_a_device_that_never_connected_from_one_seen_recently(s
     lines = {c.name: describe(c, now=1_000_000 + 40) for c in await svc.list()}
     assert "never connected" in lines["fresh"]
     assert "40 s ago" in lines["seen"]
-    assert "5.0 MB" in lines["seen"]
+    assert "5.0 MiB" in lines["seen"]
 
 
 async def test_list_shows_a_client_of_the_file_missing_from_the_interface(svc, iface):
@@ -177,4 +177,6 @@ def test_list_speaks_in_units_a_person_reads():
     assert "3 h" in line(3 * 3600, 100)
     assert "2 d" in line(2 * 86400, 100)
     assert "100 B" in line(1, 100)
-    assert "GB" in line(1, 3 * 1024**3)
+    # Binary units, named so: the figures match those of awg show
+    assert "2.0 KiB" in line(1, 2048)
+    assert "3.0 GiB" in line(1, 3 * 1024**3)

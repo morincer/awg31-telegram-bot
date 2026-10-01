@@ -1,6 +1,6 @@
 [project]
 name = "awg31-telegram-bot"
-version = "0.1.0"
+version = "0.1.1"
 description = "Telegram bot that adds AmneziaWG 3.x clients to a kernel-module server on the fly"
 readme = "README.md"
 license = "MIT"
@@ -9,6 +9,8 @@ requires-python = ">=3.12"
 dependencies = [
     "aiogram>=3.31,<4",
     "segno>=1.6,<2",
+    # Joins the QR codes of a series into one animation
+    "pillow>=11,<13",
 ]
 
 [project.scripts]
@@ -22,7 +24,6 @@ dev = [
     "ruff>=0.13",
     # A QR decoder of its own, so a test reads the images the bot sends as a phone camera would
     "zxing-cpp>=2.3",
-    "pillow>=11",
 ]
 
 [build-system]

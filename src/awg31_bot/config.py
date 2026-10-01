@@ -20,7 +20,7 @@ class Config:
     # The tunnel network and the server's address in it; clients get the free addresses
     network: ipaddress.IPv4Network
     server_ip: ipaddress.IPv4Address
-    # Shown in AmneziaVPN as the server's name: "<name> - <client>"
+    # The name AmneziaVPN gives the connection; keep it short, a phone shows a dozen characters
     name: str
     awg: str = "awg"
 

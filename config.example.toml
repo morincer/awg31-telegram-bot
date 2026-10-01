@@ -18,8 +18,8 @@ mtu = 1280
 network = "10.66.66.0/24"
 server_ip = "10.66.66.1"
 
-# Shown in AmneziaVPN as "<name> - <client>"
-name = "example"
+# The name AmneziaVPN gives the connection; keep it short, a phone shows a dozen characters
+name = "Example AWG"
 
 # The awg binary of amneziawg-tools
 awg = "/usr/bin/awg"
