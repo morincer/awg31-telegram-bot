@@ -5,14 +5,28 @@ import logging
 import os
 
 import pytest
-from aiogram.methods import SendAnimation, SendMessage
+from aiogram.methods import DeleteMyCommands, SendAnimation, SendMessage, SetMyCommands
+from aiogram.types import ForceReply
 
 from awg31_bot import peers
+from awg31_bot.bot import announce
 from awg31_bot.service import Service
 
 from . import app_reader
 from .conftest import fake_public, parse_conf
-from .telegram import code_blocks, dispatcher, documents, everything_shown, images, scan, send, texts
+from .telegram import (
+    RecordingBot,
+    buttons,
+    code_blocks,
+    dispatcher,
+    documents,
+    everything_shown,
+    images,
+    press,
+    scan,
+    send,
+    texts,
+)
 
 
 @pytest.fixture
@@ -203,7 +217,7 @@ async def test_the_journal_says_what_each_command_did_and_holds_no_key(dp, iface
 
 
 @pytest.mark.parametrize(
-    "text", ["/add", "/add two words", "/add ../../etc", "/add имя", "/reissue ghost", "/del ghost"]
+    "text", ["/add two words", "/add ../../etc", "/add имя", "/reissue ghost", "/del ghost"]
 )
 async def test_a_request_the_bot_refuses_is_explained_and_changes_nothing(dp, config, iface, text):
     bot = await send(dp, text)
@@ -228,6 +242,110 @@ async def test_a_server_that_refuses_the_change_is_reported_and_nothing_is_half_
     assert "Unable to modify interface" in texts(bot)[0]
     assert documents(bot) == {}
     assert peers.read(config.peers_file) == []
+
+
+# Nothing to remember: the menu, a question for the name, and buttons
+
+
+async def test_only_the_owners_chats_get_a_command_menu():
+    bot = RecordingBot()
+    await announce(bot, frozenset({42, 43}))
+    # The menu everybody else sees is emptied, so it does not give the bot away
+    assert any(isinstance(c, DeleteMyCommands) and c.scope is None for c in bot.calls)
+    menus = [c for c in bot.calls if isinstance(c, SetMyCommands)]
+    assert sorted(c.scope.chat_id for c in menus) == [42, 43]
+    for menu in menus:
+        assert {"add", "list"} <= {c.command for c in menu.commands}
+
+
+async def test_add_without_a_name_asks_for_one_and_takes_the_answer(dp, config):
+    asked = await send(dp, "/add")
+    assert isinstance(asked.calls[0].reply_markup, ForceReply)
+    assert "name" in texts(asked)[0]
+    assert peers.read(config.peers_file) == []
+
+    bot = await send(dp, "phone")
+    name, _, _, _ = issued_config(bot)
+    assert name == "phone.conf"
+    assert "phone" in on_file(config)
+
+
+async def test_a_command_instead_of_the_name_drops_the_question(dp, config, iface):
+    await send(dp, "/add")
+    await send(dp, "/list")
+    later = await send(dp, "hello")
+    assert later.calls == []
+    assert iface.peers == {}
+    assert peers.read(config.peers_file) == []
+
+
+async def test_a_bad_name_given_as_the_answer_is_refused(dp, config, iface):
+    await send(dp, "/add")
+    bot = await send(dp, "two words")
+    assert len(texts(bot)) == 1 and documents(bot) == {}
+    assert iface.peers == {}
+
+
+async def test_list_puts_reissue_and_delete_under_every_device(dp):
+    await send(dp, "/add phone")
+    await send(dp, "/add laptop")
+    offered = buttons(await send(dp, "/list"))
+    for name in ("phone", "laptop"):
+        assert f"Reissue {name}" in offered and f"Delete {name}" in offered
+
+
+async def test_delete_from_the_list_asks_first_and_removes_on_yes(dp, config, iface):
+    await send(dp, "/add phone")
+    listed = buttons(await send(dp, "/list"))
+
+    asked = await press(dp, listed["Delete phone"])
+    assert "phone" in on_file(config), "nothing is removed before the answer"
+    confirm = buttons(asked)
+
+    done = await press(dp, confirm["Yes, delete phone"])
+    assert iface.peers == {}
+    assert "phone" not in on_file(config)
+    assert any("removed" in t for t in texts(done))
+    # The answered question keeps no button to press twice
+    assert buttons(done) == {}
+
+
+async def test_reissue_from_the_list_asks_first_and_sends_a_new_config_on_yes(dp, config, iface):
+    first = await send(dp, "/add phone")
+    _, old_conf, _, _ = issued_config(first)
+    old_key = fake_public(old_conf["Interface"]["PrivateKey"])
+
+    asked = await press(dp, buttons(await send(dp, "/list"))["Reissue phone"])
+    assert old_key in iface.peers, "the old config works until the answer"
+
+    done = await press(dp, buttons(asked)["Yes, reissue phone"])
+    _, new_conf, _, _ = issued_config(done)
+    assert old_key not in iface.peers
+    assert fake_public(new_conf["Interface"]["PrivateKey"]) in iface.peers
+
+
+async def test_no_leaves_the_device_as_it_was(dp, config, iface):
+    await send(dp, "/add phone")
+    before = dict(iface.peers)
+    asked = await press(dp, buttons(await send(dp, "/list"))["Delete phone"])
+    await press(dp, buttons(asked)["No"])
+    assert iface.peers == before
+    assert "phone" in on_file(config)
+
+
+@pytest.mark.parametrize(("command", "button"), [("/reissue", "Reissue phone"), ("/del", "Delete phone")])
+async def test_a_command_without_a_name_offers_the_devices_to_pick(dp, command, button):
+    await send(dp, "/add phone")
+    offered = buttons(await send(dp, command))
+    assert list(offered) == [button]
+
+
+async def test_a_strangers_button_press_gets_no_answer_and_changes_nothing(dp, config, iface):
+    await send(dp, "/add phone")
+    confirm = buttons(await press(dp, buttons(await send(dp, "/list"))["Delete phone"]))
+    bot = await press(dp, confirm["Yes, delete phone"], user_id=7)
+    assert bot.calls == []
+    assert "phone" in on_file(config)
 
 
 async def test_start_and_help_explain_the_commands(dp):

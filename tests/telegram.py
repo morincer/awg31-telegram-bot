@@ -17,7 +17,7 @@ import zxingcpp
 from aiogram import Bot, Dispatcher
 from aiogram.enums import ParseMode
 from aiogram.methods import SendAnimation, SendDocument, SendMediaGroup, SendMessage, SendPhoto
-from aiogram.types import Chat, Message, Update, User
+from aiogram.types import CallbackQuery, Chat, Message, Update, User
 from PIL import Image, ImageSequence
 
 from awg31_bot.bot import build_router
@@ -67,6 +67,41 @@ async def send(dp: Dispatcher, text: str, user_id: int = 42) -> RecordingBot:
     )
     await dp.feed_update(bot, update)
     return bot
+
+
+async def press(dp: Dispatcher, data: str, user_id: int = 42) -> RecordingBot:
+    """A tap on an inline button with this callback data, under a message of the bot's."""
+    bot = RecordingBot()
+    n = next(_ids)
+    chat = Chat(id=user_id, type="private")
+    update = Update(
+        update_id=n,
+        callback_query=CallbackQuery(
+            id=str(n),
+            from_user=User(id=user_id, is_bot=False, first_name="someone"),
+            chat_instance="1",
+            data=data,
+            message=Message(
+                message_id=n,
+                date=datetime.now(UTC),
+                chat=chat,
+                from_user=User(id=123456, is_bot=True, first_name="bot"),
+                text="a message of the bot",
+            ),
+        ),
+    )
+    await dp.feed_update(bot, update)
+    return bot
+
+
+def buttons(bot: RecordingBot) -> dict[str, str]:
+    """Every inline button sent, its text to its callback data."""
+    out = {}
+    for c in bot.calls:
+        markup = getattr(c, "reply_markup", None)
+        for row in getattr(markup, "inline_keyboard", None) or []:
+            out.update({b.text: b.callback_data for b in row})
+    return out
 
 
 def shown(call) -> str:

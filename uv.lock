@@ -170,7 +170,7 @@ wheels = [
 
 [[package]]
 name = "awg31-telegram-bot"
-version = "0.1.1"
+version = "0.1.2"
 source = { editable = "." }
 dependencies = [
     { name = "aiogram" },

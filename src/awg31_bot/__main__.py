@@ -9,7 +9,7 @@ from aiogram import Bot, Dispatcher
 
 from . import config as config_module
 from .awg import Awg
-from .bot import build_router
+from .bot import announce, build_router
 from .service import Service
 
 
@@ -19,7 +19,8 @@ async def serve(config: config_module.Config) -> None:
     dp.include_router(build_router(config.admin_ids))
     bot = Bot(config.token)
     try:
-        await dp.start_polling(bot, allowed_updates=["message"])
+        await announce(bot, config.admin_ids)
+        await dp.start_polling(bot, allowed_updates=["message", "callback_query"])
     finally:
         await bot.session.close()
 

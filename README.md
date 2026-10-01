@@ -25,9 +25,11 @@ The 3.x parameter set — junk, padding, headers, header protection, the I packe
 | `/add <name>` | A new device: new keys and preshared key, the lowest free address, the config sent back |
 | `/reissue <name>` | New keys for a device on the same address. The old config stops working |
 | `/del <name>` | Removes the device |
-| `/list` | Devices with their address, latest handshake and traffic |
+| `/list` | Devices with their address, latest handshake and traffic, with Reissue and Delete under each |
 
 Names are Latin letters, digits, `.`, `-` and `_`, up to 32 characters.
+
+Nothing has to be remembered. The bot sets its command menu in the admins' chats — and only there, so a stranger's menu stays empty. `/add` without a name asks for one and takes the next message; any command instead drops the question. `/reissue` and `/del` without a name offer the devices as buttons. Reissue and Delete both cut a config off, so each asks for a Yes first, and the answered question keeps no button to press twice.
 
 ## What a device's config looks like in the chat
 
